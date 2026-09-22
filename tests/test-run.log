@@ -1,0 +1,66 @@
+2026-09-23 06:17:46,282 | INFO    | tests.api | 用例 happy_path 输入=[{'id': 1, 'name': 'a', 'age': 1, 'email': 'a@b.co', 'score': 1}, {'id': 'bad', 'age': 200}]
+2026-09-23 06:17:46,284 | INFO    | app.validation | 收到提交 key=k records=2 输入=[{'id': 1, 'name': 'a', 'age': 1, 'email': 'a@b.co', 'score': 1}, {'id': 'bad', 'age': 200}]
+2026-09-23 06:17:46,284 | INFO    | app.validation | 提交判定 key=k status=completed overall_valid=False
+2026-09-23 06:17:46,285 | INFO    | tests.api | 判定依据 status=200 overall=False summary={'total': 2, 'valid_count': 1, 'invalid_count': 1, 'issue_count': 5}
+2026-09-23 06:17:46,287 | INFO    | app.validation | 收到查询 key=k
+2026-09-23 06:17:46,287 | INFO    | app.validation | 查询命中 key=k status=completed overall_valid=False
+2026-09-23 06:17:46,291 | INFO    | app.validation | 收到提交 key=pf records=2 输入=[{'id': 1, 'name': 'a', 'age': 1, 'email': 'a@b.co', 'score': 1}, {'id': 'bad', 'age': 200}]
+2026-09-23 06:17:46,291 | INFO    | app.validation | 提交判定 key=pf status=completed overall_valid=False
+2026-09-23 06:17:46,292 | INFO    | tests.api | 用例 partial_failure 输入=[{'id': 1, 'name': 'a', 'age': 1, 'email': 'a@b.co', 'score': 1}, {'id': 'bad', 'age': 200}] -> status=200 category字段存在性=False
+2026-09-23 06:17:46,295 | WARNING | app.validation | 参数非法 path=/api/v1/validations errors=[{'type': 'string_too_short', 'loc': ('body', 'idempotency_key'), 'msg': 'String should have at least 1 character', 'input': '', 'ctx': {'min_length': 1}}]
+2026-09-23 06:17:46,296 | INFO    | app.validation | 收到提交 key=p records=2 输入=[{'id': 1, 'name': 'a', 'age': 1, 'email': 'a@b.co', 'score': 1}, {'id': 'bad', 'age': 200}]
+2026-09-23 06:17:46,296 | INFO    | app.validation | 提交判定 key=p status=completed overall_valid=False
+2026-09-23 06:17:46,370 | INFO    | app.validation | 收到提交 key=c2 records=0 输入=[]
+2026-09-23 06:17:46,391 | INFO    | app.validation | 收到提交 key=c1 records=0 输入=[]
+2026-09-23 06:17:46,412 | INFO    | app.validation | 收到提交 key=c3 records=0 输入=[]
+2026-09-23 06:17:46,412 | WARNING | app.validation | 准入/应用错误 key=c3 category=rejected code=admission_rejected details={'reason': 'concurrency_limit', 'max_concurrency': 2, 'active': 2}
+2026-09-23 06:17:46,413 | INFO    | app.validation | 提交判定 key=c1 status=completed overall_valid=True
+2026-09-23 06:17:46,413 | INFO    | app.validation | 提交判定 key=c2 status=completed overall_valid=True
+2026-09-23 06:17:46,415 | INFO    | tests.api | 用例 three_categories 判定依据：参数非法=422/invalid_request；部分失败=200/overall=False；超限=503/rejected reason=concurrency_limit
+2026-09-23 06:17:46,417 | INFO    | tests.api | 用例 concurrent_duplicate 输入 key=same 并发=8
+2026-09-23 06:17:46,424 | INFO    | app.validation | 收到提交 key=same records=2 输入=[{'id': 1, 'name': 'a', 'age': 1, 'email': 'a@b.co', 'score': 1}, {'id': 'bad', 'age': 200}]
+2026-09-23 06:17:46,424 | INFO    | app.validation | 收到提交 key=same records=2 输入=[{'id': 1, 'name': 'a', 'age': 1, 'email': 'a@b.co', 'score': 1}, {'id': 'bad', 'age': 200}]
+2026-09-23 06:17:46,424 | INFO    | app.validation | 收到提交 key=same records=2 输入=[{'id': 1, 'name': 'a', 'age': 1, 'email': 'a@b.co', 'score': 1}, {'id': 'bad', 'age': 200}]
+2026-09-23 06:17:46,425 | INFO    | app.validation | 收到提交 key=same records=2 输入=[{'id': 1, 'name': 'a', 'age': 1, 'email': 'a@b.co', 'score': 1}, {'id': 'bad', 'age': 200}]
+2026-09-23 06:17:46,425 | INFO    | app.validation | 收到提交 key=same records=2 输入=[{'id': 1, 'name': 'a', 'age': 1, 'email': 'a@b.co', 'score': 1}, {'id': 'bad', 'age': 200}]
+2026-09-23 06:17:46,425 | INFO    | app.validation | 收到提交 key=same records=2 输入=[{'id': 1, 'name': 'a', 'age': 1, 'email': 'a@b.co', 'score': 1}, {'id': 'bad', 'age': 200}]
+2026-09-23 06:17:46,425 | INFO    | app.validation | 收到提交 key=same records=2 输入=[{'id': 1, 'name': 'a', 'age': 1, 'email': 'a@b.co', 'score': 1}, {'id': 'bad', 'age': 200}]
+2026-09-23 06:17:46,425 | INFO    | app.validation | 提交判定 key=same status=completed overall_valid=False
+2026-09-23 06:17:46,426 | INFO    | app.validation | 提交判定 key=same status=completed overall_valid=False
+2026-09-23 06:17:46,425 | INFO    | app.validation | 提交判定 key=same status=completed overall_valid=False
+2026-09-23 06:17:46,425 | INFO    | app.validation | 提交判定 key=same status=completed overall_valid=False
+2026-09-23 06:17:46,426 | INFO    | app.validation | 提交判定 key=same status=completed overall_valid=False
+2026-09-23 06:17:46,426 | INFO    | app.validation | 收到提交 key=same records=2 输入=[{'id': 1, 'name': 'a', 'age': 1, 'email': 'a@b.co', 'score': 1}, {'id': 'bad', 'age': 200}]
+2026-09-23 06:17:46,426 | INFO    | app.validation | 提交判定 key=same status=completed overall_valid=False
+2026-09-23 06:17:46,429 | INFO    | app.validation | 提交判定 key=same status=completed overall_valid=False
+2026-09-23 06:17:46,429 | INFO    | app.validation | 提交判定 key=same status=completed overall_valid=False
+2026-09-23 06:17:46,434 | INFO    | tests.api | 判定依据 执行次数=1（期望1），各响应是否一致=True
+2026-09-23 06:17:46,437 | INFO    | app.validation | 收到查询 key=missing
+2026-09-23 06:17:46,437 | WARNING | app.validation | 查询未命中 key=missing
+2026-09-23 06:17:46,437 | WARNING | app.validation | 准入/应用错误 key=- category=not_found code=not_found details={'idempotency_key': 'missing'}
+2026-09-23 06:17:46,438 | INFO    | tests.api | 用例 not_found 判定依据 status=404 body={'error': 'not_found', 'category': 'not_found', 'message': '未找到幂等键 missing 的任务', 'details': {'idempotency_key': 'missing'}}
+2026-09-23 06:17:46,441 | INFO    | tests.api | 用例 health 判定依据 {'status': 'ok', 'active': 0, 'max_concurrency': 2}
+2026-09-23 06:17:46,442 | INFO    | tests.manager | 用例 sequential_duplicate 输入 key=dup records=[{'id': 1, 'name': 'a', 'age': 1, 'email': 'a@b.co', 'score': 1}]
+2026-09-23 06:17:46,442 | INFO    | tests.manager | 判定依据 first_is_second=True status=completed
+2026-09-23 06:17:46,442 | INFO    | tests.manager | 用例 concurrent_same_key 输入 key=hot 并发线程数=16
+2026-09-23 06:17:46,444 | INFO    | tests.manager | 判定依据 执行器真实调用=['hot'] (期望仅 ['hot'])
+2026-09-23 06:17:46,445 | INFO    | tests.manager | 用例 over_limit 输入 key=over, 当前 active=2, 上限=2
+2026-09-23 06:17:46,445 | INFO    | tests.manager | 判定依据 category=rejected code=admission_rejected details={'reason': 'concurrency_limit', 'max_concurrency': 2, 'active': 2}
+2026-09-23 06:17:46,446 | INFO    | tests.manager | 用例 same_key_under_full_capacity 执行器真实调用=['only']
+2026-09-23 06:17:46,447 | INFO    | tests.manager | 用例 error_categories：构造拒绝(rejected)与参数非法(invalid_request)
+2026-09-23 06:17:46,447 | INFO    | tests.manager | 判定依据 rejected.category=rejected status=503；ValueError 与 AdmissionRejectedError 类型不同
+2026-09-23 06:17:46,447 | INFO    | tests.validator | 用例 test_valid_record_passes 输入={'id': 1, 'name': 'alice', 'age': 30, 'email': 'a@x.com', 'score': 92.5}
+2026-09-23 06:17:46,448 | INFO    | tests.validator | 判定依据 valid=True issues=[]
+2026-09-23 06:17:46,448 | INFO    | tests.validator | 用例 test_missing_fields 输入={'id': 7}
+2026-09-23 06:17:46,448 | INFO    | tests.validator | 判定依据 index=3 issues=[{'field': 'age', 'code': <RecordErrorCode.MISSING_FIELD: 'missing_field'>, 'message': '必填字段 age 缺失', 'expected': '整数', 'actual': None}, {'field': 'email', 'code': <RecordErrorCode.MISSING_FIELD: 'missing_field'>, 'message': '必填字段 email 缺失', 'expected': '字符串', 'actual': None}, {'field': 'name', 'code': <RecordErrorCode.MISSING_FIELD: 'missing_field'>, 'message': '必填字段 name 缺失', 'expected': '字符串', 'actual': None}, {'field': 'score', 'code': <RecordErrorCode.MISSING_FIELD: 'missing_field'>, 'message': '必填字段 score 缺失', 'expected': '数值', 'actual': None}]
+2026-09-23 06:17:46,449 | INFO    | tests.validator | 用例 test_type_mismatch 输入={'id': 'x', 'name': 9, 'age': True, 'email': 3, 'score': 'A'}
+2026-09-23 06:17:46,449 | INFO    | tests.validator | 判定依据 issues=[{'field': 'age', 'code': <RecordErrorCode.TYPE_MISMATCH: 'type_mismatch'>, 'message': '字段 age 类型不匹配', 'expected': '整数', 'actual': 'bool'}, {'field': 'email', 'code': <RecordErrorCode.TYPE_MISMATCH: 'type_mismatch'>, 'message': '字段 email 类型不匹配', 'expected': '字符串', 'actual': 'int'}, {'field': 'id', 'code': <RecordErrorCode.TYPE_MISMATCH: 'type_mismatch'>, 'message': '字段 id 类型不匹配', 'expected': '整数', 'actual': 'str'}, {'field': 'name', 'code': <RecordErrorCode.TYPE_MISMATCH: 'type_mismatch'>, 'message': '字段 name 类型不匹配', 'expected': '字符串', 'actual': 'int'}, {'field': 'score', 'code': <RecordErrorCode.TYPE_MISMATCH: 'type_mismatch'>, 'message': '字段 score 类型不匹配', 'expected': '数值', 'actual': 'str'}]
+2026-09-23 06:17:46,449 | INFO    | tests.validator | 用例 test_invalid_values 输入={'id': 0, 'name': '   ', 'age': 200, 'email': 'bad-email', 'score': 101}
+2026-09-23 06:17:46,449 | INFO    | tests.validator | 判定依据 issues=[{'field': 'age', 'code': <RecordErrorCode.INVALID_VALUE: 'invalid_value'>, 'message': '字段 age 取值非法', 'expected': '1~150 的整数', 'actual': '200'}, {'field': 'email', 'code': <RecordErrorCode.INVALID_VALUE: 'invalid_value'>, 'message': '字段 email 取值非法', 'expected': '形如 local@domain.tld 的邮箱', 'actual': "'bad-email'"}, {'field': 'id', 'code': <RecordErrorCode.INVALID_VALUE: 'invalid_value'>, 'message': '字段 id 取值非法', 'expected': '正整数 (>=1)', 'actual': '0'}, {'field': 'name', 'code': <RecordErrorCode.INVALID_VALUE: 'invalid_value'>, 'message': '字段 name 取值非法', 'expected': '非空字符串，长度 <= 100', 'actual': "'   '"}, {'field': 'score', 'code': <RecordErrorCode.INVALID_VALUE: 'invalid_value'>, 'message': '字段 score 取值非法', 'expected': '0~100 的有限数值', 'actual': '101'}]
+2026-09-23 06:17:46,450 | INFO    | tests.validator | 用例 test_non_object_record 输入=['not', 'an', 'object']
+2026-09-23 06:17:46,450 | INFO    | tests.validator | 判定依据 issues=[{'field': '__record__', 'code': <RecordErrorCode.TYPE_MISMATCH: 'type_mismatch'>, 'message': '记录必须是 JSON 对象', 'expected': 'object', 'actual': 'list'}]
+2026-09-23 06:17:46,450 | INFO    | tests.validator | 用例 test_partial_failure 输入=[{'id': 1, 'name': 'a', 'age': 1, 'email': 'a@b.co', 'score': 0}, {'id': 'bad'}, {'id': 3, 'name': 'c', 'age': 99, 'email': 'c@d.co', 'score': 100}]
+2026-09-23 06:17:46,450 | INFO    | tests.validator | 判定依据 overall=False summary={'total': 3, 'valid_count': 2, 'invalid_count': 1, 'issue_count': 5} records_valid=[True, False, True]
+2026-09-23 06:17:46,451 | INFO    | tests.validator | 用例 test_order_independence 输入顺序A=[{'id': 1, 'name': 'a', 'age': 1, 'email': 'a@b.co', 'score': 0}, {'id': 'bad'}, {'id': 3, 'name': 'c', 'age': 99, 'email': 'c@d.co', 'score': 100}] 顺序B=[{'id': 3, 'name': 'c', 'age': 99, 'email': 'c@d.co', 'score': 100}, {'id': 'bad'}, {'id': 1, 'name': 'a', 'age': 1, 'email': 'a@b.co', 'score': 0}]
+2026-09-23 06:17:46,451 | INFO    | tests.validator | 用例 test_empty_batch 输入=[]
+2026-09-23 06:17:46,451 | INFO    | tests.validator | 判定依据 summary={'total': 0, 'valid_count': 0, 'invalid_count': 0, 'issue_count': 0}
