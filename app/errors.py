@@ -1,4 +1,5 @@
 """统一错误结构：所有被拒绝/非法的结论都带稳定的机器可读 code。"""
+
 from __future__ import annotations
 
 from fastapi.responses import JSONResponse

@@ -1,14 +1,16 @@
 """HTTP 层：三类结论稳定可区分；并发同 key 只执行一次；超限立即拒绝。"""
+
 from __future__ import annotations
 
+import logging
 import threading
 import time
 
 from fastapi.testclient import TestClient
 
 from app import api as api_module
-from app.api import app
 from app import validation as validation_module
+from app.api import app
 
 GOOD = {"id": 1, "name": "alice", "age": 30, "score": 0.9, "tags": ["a"]}
 BAD_AGE = {"id": 2, "name": "bob", "age": 9, "score": 0.5, "tags": ["x"]}
@@ -111,7 +113,9 @@ def test_capacity_rejected_is_distinct_from_invalid_and_failed(monkeypatch):
     assert invalid.status_code == 400
     assert invalid.json()["error"]["code"] == "INVALID_REQUEST"
     bad_json = _client().post(
-        "/validations", content=b"{not-json", headers={"content-type": "application/json"}
+        "/validations",
+        content=b"{not-json",
+        headers={"content-type": "application/json"},
     )
     assert bad_json.status_code == 400
     assert bad_json.json()["error"]["code"] == "INVALID_REQUEST"
@@ -132,8 +136,14 @@ def test_capacity_rejected_is_distinct_from_invalid_and_failed(monkeypatch):
 
 def test_partial_failure_keeps_full_batch_and_is_order_independent():
     c = _client()
-    r1 = c.post("/validations", json={"idempotency_key": "batch", "records": [GOOD, BAD_AGE, MISSING]})
-    r2 = c.post("/validations", json={"idempotency_key": "batch2", "records": [MISSING, GOOD, BAD_AGE]})
+    r1 = c.post(
+        "/validations",
+        json={"idempotency_key": "batch", "records": [GOOD, BAD_AGE, MISSING]},
+    )
+    r2 = c.post(
+        "/validations",
+        json={"idempotency_key": "batch2", "records": [MISSING, GOOD, BAD_AGE]},
+    )
     for r in (r1, r2):
         assert r.status_code == 200
         b = r.json()
@@ -147,17 +157,163 @@ def test_partial_failure_keeps_full_batch_and_is_order_independent():
     # 失败原因集合与提交顺序无关（两条失败记录都定位在 age，但依据不同）
     fail_reasons1 = sorted(x["reason"] for x in recs1 if not x["valid"])
     fail_reasons2 = sorted(x["reason"] for x in recs2 if not x["valid"])
-    assert fail_reasons1 == fail_reasons2 == ["取值非法：age 必须在 [18, 120] 范围内", "字段缺失"]
+    assert (
+        fail_reasons1
+        == fail_reasons2
+        == ["取值非法：age 必须在 [18, 120] 范围内", "字段缺失"]
+    )
     assert all(x["field"] == "age" for x in recs1 + recs2 if not x["valid"])
 
 
 def test_conflict_and_not_found_codes_are_stable():
     c = _client()
     c.post("/validations", json={"idempotency_key": "k", "records": [GOOD]})
-    conflict = c.post("/validations", json={"idempotency_key": "k", "records": [BAD_AGE]})
+    conflict = c.post(
+        "/validations", json={"idempotency_key": "k", "records": [BAD_AGE]}
+    )
     assert conflict.status_code == 409
     assert conflict.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
 
     missing = c.get("/validations/unknown")
     assert missing.status_code == 404
     assert missing.json()["error"]["code"] == "NOT_FOUND"
+
+
+class FailingValidator:
+    """执行到即阻塞，放行后抛异常的校验器：制造 HTTP 层“执行失败”并发窗口。"""
+
+    def __init__(self, monkeypatch) -> None:
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.calls = 0
+        self._lock = threading.Lock()
+
+        def failing(records):
+            with self._lock:
+                self.calls += 1
+            self.started.set()
+            if not self.release.wait(timeout=5):
+                raise TimeoutError("FailingValidator 未放行")
+            raise RuntimeError("执行过程失败（模拟）")
+
+        monkeypatch.setattr(api_module, "validate_dataset", failing)
+
+    def open(self) -> None:
+        self.release.set()
+
+
+def test_execution_failure_is_distinct_and_its_capacity_recovers(monkeypatch, caplog):
+    def always_fail(records):
+        raise RuntimeError("执行过程失败（模拟）")
+
+    monkeypatch.setattr(api_module, "validate_dataset", always_fail)
+
+    with caplog.at_level(logging.WARNING, logger="dataset.manager"):
+        r = _client().post(
+            "/validations", json={"idempotency_key": "exec-fail", "records": [GOOD]}
+        )
+    assert r.status_code == 200
+    body = r.json()
+    # 与 VALIDATION_FAILED / INVALID_REQUEST / CAPACITY_REJECTED 明确区分
+    assert body["conclusion"] == "EXECUTION_FAILED"
+    assert body["failure"] == {
+        "type": "RuntimeError",
+        "message": "执行过程失败（模拟）",
+    }
+    assert body["result"] is None
+    # 失败信息进日志
+    assert "执行失败" in caplog.text and "RuntimeError" in caplog.text
+
+    # 查询接口可查到执行失败结论
+    got = _client().get("/validations/exec-fail")
+    assert got.status_code == 200
+    gb = got.json()
+    assert gb["conclusion"] == "EXECUTION_FAILED"
+    assert gb["failure"] == body["failure"]
+
+    # 容量回到基线
+    cap = _client().get("/capacity")
+    assert cap.status_code == 200
+    assert cap.json() == {"inflight": 0, "max_concurrency": 2, "available": 2}
+
+
+def test_execution_failure_is_idempotent_and_concurrent_submissions_converge(
+    monkeypatch,
+):
+    gate = FailingValidator(monkeypatch)
+    outcomes: list = []
+
+    def worker() -> None:
+        c = _client()
+        r = c.post(
+            "/validations", json={"idempotency_key": "fail-dup", "records": [GOOD]}
+        )
+        outcomes.append(r)
+
+    threads = [threading.Thread(target=worker) for _ in range(6)]
+    for t in threads:
+        t.start()
+    assert gate.started.wait(timeout=2)
+    gate.open()
+    for t in threads:
+        t.join(timeout=10)
+        assert not t.is_alive()
+
+    # 只执行一次，6 份响应收敛到同一份失败结论
+    assert gate.calls == 1
+    assert len(outcomes) == 6
+    assert all(r.status_code == 200 for r in outcomes)
+    bodies = [r.json() for r in outcomes]
+    assert all(b["conclusion"] == "EXECUTION_FAILED" for b in bodies)
+    assert all(b["failure"] == bodies[0]["failure"] for b in bodies)
+    assert sum(1 for b in bodies if b["cached"] is False) == 1
+    assert sum(1 for b in bodies if b["cached"] is True) == 5
+
+    # 全部等待者已及时返回、没有排队卡住；容量回基线
+    assert _client().get("/capacity").json()["inflight"] == 0
+
+    # 再次同载荷提交仍复用同一份失败结论，不产生矛盾结论
+    again = _client().post(
+        "/validations", json={"idempotency_key": "fail-dup", "records": [GOOD]}
+    )
+    ab = again.json()
+    assert ab["cached"] is True
+    assert ab["conclusion"] == "EXECUTION_FAILED"
+    assert ab["failure"] == bodies[0]["failure"]
+    assert gate.calls == 1
+
+
+def test_full_issue_list_is_in_response_and_order_is_stable(caplog):
+    bad = {
+        "id": -1,
+        "age": "x",
+        "score": 9,
+        "tags": ["ok", 3],
+        "name": "a",
+        "extra": 1,
+    }
+    with caplog.at_level(logging.INFO, logger="dataset.validation"):
+        r1 = _client().post(
+            "/validations", json={"idempotency_key": "issues-1", "records": [bad, GOOD]}
+        )
+        r2 = _client().post(
+            "/validations", json={"idempotency_key": "issues-2", "records": [GOOD, bad]}
+        )
+    assert r1.status_code == r2.status_code == 200
+    i1 = r1.json()["result"]["records"][0]["issues"]
+    i2 = next(x for x in r2.json()["result"]["records"] if not x["valid"])["issues"]
+    # 乱序批次中单条记录的问题清单完全一致、顺序固定
+    assert i1 == i2
+    assert [i["field"] for i in i1] == [
+        "extra",
+        "id",
+        "age",
+        "score",
+        "tags[1]",
+    ]
+    # 老字段仍可用：field/reason 取首条问题
+    legacy = r1.json()["result"]["records"][0]
+    assert legacy["field"] == "extra" and legacy["reason"] == i1[0]["reason"]
+    # 输入与每条判定依据进日志
+    assert "校验输入" in caplog.text
+    assert caplog.text.count("判定依据") == 10  # 两个批次同一坏记录各命中 5 条
