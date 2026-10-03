@@ -1,11 +1,14 @@
 """HTTP 接口层。
 
-错误分类（HTTP 状态码 + 稳定 code，绝不混用）：
-- 400 INVALID_REQUEST     参数非法，任务未进入执行
-- 503 CAPACITY_REJECTED   并发执行数已达上限，准入被立即拒绝（不排队）
-- 409 IDEMPOTENCY_CONFLICT 同一幂等标识提交了不同载荷
-- 404 NOT_FOUND           查询未知标识
-- 200 且 result.all_passed=False  VALIDATION_FAILED：任务已执行、数据校验不通过
+四类判定（HTTP 状态码 + 稳定 code/conclusion，绝不混用）：
+- 400 INVALID_REQUEST        参数非法，任务未进入执行
+- 503 CAPACITY_REJECTED      并发执行数已达上限，准入被立即拒绝（不排队）
+- 409 IDEMPOTENCY_CONFLICT   同一幂等标识提交了不同载荷
+- 404 NOT_FOUND              查询未知标识
+- 200 conclusion=VALIDATION_PASSED  已执行，数据全部通过
+- 200 conclusion=VALIDATION_FAILED  已执行，数据校验不通过
+- 200 conclusion=EXECUTION_FAILED   已执行，执行过程本身失败（同标识同载荷
+                                    再提交复用同一份失败结论，不重复执行）
 """
 from __future__ import annotations
 
@@ -96,18 +99,13 @@ async def submit_validation(request: Request) -> JSONResponse:
         )
 
     logger.info(
-        "受理结论: idempotency_key=%s cached=%s all_passed=%s",
-        key, view.cached, view.result.all_passed if view.result else None,
+        "受理结论: idempotency_key=%s cached=%s conclusion=%s",
+        key, view.cached,
+        view.conclusion.value if view.conclusion is not None else None,
     )
     return JSONResponse(
         status_code=200,
-        content=view.model_dump() | {
-            "conclusion": (
-                "VALIDATION_PASSED"
-                if view.result is not None and view.result.all_passed
-                else "VALIDATION_FAILED"
-            )
-        },
+        content=json.loads(view.model_dump_json()),
     )
 
 
@@ -121,9 +119,15 @@ def get_validation(key: str) -> JSONResponse:
             404,
             {"idempotency_key": key},
         )
-    body = view.model_dump()
-    if view.status.value == "COMPLETED" and view.result is not None:
-        body["conclusion"] = (
-            "VALIDATION_PASSED" if view.result.all_passed else "VALIDATION_FAILED"
-        )
-    return JSONResponse(status_code=200, content=body)
+    return JSONResponse(status_code=200, content=json.loads(view.model_dump_json()))
+
+
+@app.get("/capacity")
+def get_capacity() -> JSONResponse:
+    """本地容量占用观测：正在执行多少、上限多少、还剩多少槽位。
+
+    压测后可立即调用确认 inflight 已回到 0（占用未泄漏）。
+    """
+    snapshot = manager.capacity()
+    logger.info("容量观测: %s", snapshot.model_dump())
+    return JSONResponse(status_code=200, content=snapshot.model_dump())

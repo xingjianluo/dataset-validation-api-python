@@ -7,8 +7,8 @@ import time
 from fastapi.testclient import TestClient
 
 from app import api as api_module
-from app.api import app
 from app import validation as validation_module
+from app.api import app
 
 GOOD = {"id": 1, "name": "alice", "age": 30, "score": 0.9, "tags": ["a"]}
 BAD_AGE = {"id": 2, "name": "bob", "age": 9, "score": 0.5, "tags": ["x"]}
@@ -16,12 +16,16 @@ MISSING = {"id": 3, "name": "c", "score": 0.5, "tags": ["x"]}  # 缺 age
 
 
 class BlockingValidator:
-    """可阻塞的校验器：执行到即设置 started，放行前一直占着并发槽位。"""
+    """可阻塞的校验器：执行到即设置 started，放行前一直占着并发槽位。
 
-    def __init__(self, monkeypatch) -> None:
+    fail=True 时放行后抛出执行异常，用于模拟执行失败。
+    """
+
+    def __init__(self, monkeypatch, fail: bool = False) -> None:
         self.started = threading.Event()
         self.release = threading.Event()
         self.calls = 0
+        self.fail = fail
         self._lock = threading.Lock()
 
         def blocked(records):
@@ -29,6 +33,8 @@ class BlockingValidator:
                 self.calls += 1
             self.started.set()
             assert self.release.wait(timeout=5)
+            if self.fail:
+                raise RuntimeError("执行依赖不可用（模拟）")
             return validation_module.validate_dataset(records)
 
         monkeypatch.setattr(api_module, "validate_dataset", blocked)
@@ -161,3 +167,125 @@ def test_conflict_and_not_found_codes_are_stable():
     missing = c.get("/validations/unknown")
     assert missing.status_code == 404
     assert missing.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_full_issue_list_is_returned_and_legacy_fields_kept():
+    c = _client()
+    messy = {
+        "id": -1,
+        "name": "bob",
+        # 缺 age
+        "score": "x",
+        "tags": [1, "a"],
+        "extra": 1,
+    }
+    r = c.post("/validations", json={"idempotency_key": "issues", "records": [messy]})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["conclusion"] == "VALIDATION_FAILED"
+    rec = body["result"]["records"][0]
+
+    # 老字段继续可用：指向首个问题
+    assert rec["field"] == "extra"
+    assert "未知字段" in rec["reason"]
+
+    # 新增 issues 承载完整清单，顺序固定
+    codes = [(i["code"], i["location"]) for i in rec["issues"]]
+    assert codes == [
+        ("UNKNOWN_FIELD", "extra"),
+        ("MISSING_FIELD", "age"),
+        ("VALUE_INVALID", "id"),
+        ("TYPE_MISMATCH", "score"),
+        ("INVALID_ELEMENT", "tags[0]"),
+    ]
+    assert rec["issues"][-1]["field"] == "tags"
+
+
+def test_execution_failure_end_to_end(monkeypatch, caplog):
+    import logging as _logging
+
+    caplog.set_level(_logging.WARNING, logger="dataset.manager")
+    gate = BlockingValidator(monkeypatch, fail=True)
+    c = _client()
+    t = threading.Thread(
+        target=lambda: _client().post(
+            "/validations", json={"idempotency_key": "boom", "records": [GOOD]}
+        )
+    )
+    t.start()
+    assert gate.started.wait(timeout=2)
+
+    # 执行中可查到 RUNNING，且容量被占用
+    assert c.get("/validations/boom").json()["status"] == "RUNNING"
+    assert c.get("/capacity").json()["inflight"] == 1
+
+    gate.open()
+    t.join(timeout=10)
+
+    # 执行失败：200 + 专属 conclusion，与其他三类明确区分
+    r = c.post("/validations", json={"idempotency_key": "boom", "records": [GOOD]})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["conclusion"] == "EXECUTION_FAILED"
+    assert body["cached"] is True  # 复用失败结论，未再次执行
+    assert body["execution_error"]["type"] == "RuntimeError"
+    assert gate.calls == 1
+
+    # 查询接口同样可查到失败结论
+    got = c.get("/validations/boom").json()
+    assert got["conclusion"] == "EXECUTION_FAILED"
+    assert got["execution_error"]["message"] == "执行依赖不可用（模拟）"
+
+    # 容量回到基线
+    snap = c.get("/capacity").json()
+    assert snap == {"inflight": 0, "max_concurrency": 2, "available": 2}
+    assert "执行失败" in " ".join(rec.getMessage() for rec in caplog.records)
+
+
+def test_concurrent_same_key_failure_submissions_converge(monkeypatch):
+    gate = BlockingValidator(monkeypatch, fail=True)
+    bodies: list = []
+    errors: list = []
+
+    def worker() -> None:
+        c = _client()
+        r = c.post("/validations", json={"idempotency_key": "boom-dup",
+                                         "records": [GOOD]})
+        (bodies if r.status_code == 200 else errors).append(r.json() if r.status_code == 200 else r)
+
+    threads = [threading.Thread(target=worker) for _ in range(6)]
+    for t in threads:
+        t.start()
+    assert gate.started.wait(timeout=2)
+    gate.open()
+    for t in threads:
+        t.join(timeout=10)
+        assert not t.is_alive()
+
+    assert errors == []
+    assert gate.calls == 1
+    assert len(bodies) == 6
+    assert all(b["conclusion"] == "EXECUTION_FAILED" for b in bodies)
+    assert sum(1 for b in bodies if b["cached"] is False) == 1
+    assert sum(1 for b in bodies if b["cached"] is True) == 5
+    # 没有矛盾结论：失败载荷逐字节一致
+    first = bodies[0]["execution_error"]
+    assert all(b["execution_error"] == first for b in bodies)
+    assert _client().get("/capacity").json()["inflight"] == 0
+
+
+def test_capacity_snapshot_during_and_after_run(monkeypatch):
+    gate = BlockingValidator(monkeypatch)
+    c = _client()
+    t = threading.Thread(
+        target=lambda: _client().post(
+            "/validations", json={"idempotency_key": "cap", "records": [GOOD]}
+        )
+    )
+    t.start()
+    assert gate.started.wait(timeout=2)
+    snap = c.get("/capacity").json()
+    assert snap == {"inflight": 1, "max_concurrency": 2, "available": 1}
+    gate.open()
+    t.join(timeout=10)
+    assert c.get("/capacity").json()["inflight"] == 0
